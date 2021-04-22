@@ -50,7 +50,7 @@ TODO
 
 # Creating TensorRT engines
 
-https://github.com/NVIDIA-AI-IOT/jetson_benchmarks
+https://github.com/NVIDIA/TensorRT/tree/master/samples/opensource/trtexec
 
 __inception_v4 prototxt:__ https://www.dropbox.com/s/b7masj8xdoycv2w/inception_v4.prototxt
 
