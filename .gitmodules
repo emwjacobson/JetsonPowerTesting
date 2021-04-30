@@ -1,0 +1,3 @@
+[submodule "jetson_clocks"]
+	path = jetson_clocks
+	url = https://github.com/emwjacobson/jetson_clocks.hpp
