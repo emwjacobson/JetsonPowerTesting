@@ -4,28 +4,24 @@
 #include <chrono>
 #include <random>
 
-// Flops = (iterations * num_ops_per_item * blocks * threads) / time_seconds
-// (14586 * 3 * 128 * 1024 ) / 5 = 1.14x10^9 FLOPS
+// Flops = num_ops * gpu_loops * iterations * blocks * threads / time_seconds
 
-__global__ void testKernel(float* A, float* B, float* C, unsigned long long int *timers) {
-    // Add timer here
-    // https://github.com/zchee/cuda-sample/blob/master/0_Simple/clock/clock.cu
-
+__global__ void testKernel(float* A, float* B, float* C, long long int gpu_loops, long long int *timers) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    unsigned long long int start = clock();
-    while ((clock() - start) <= 1000000) {
+    long long int start = clock64();
+    // while ((clock64() - start) <= gpu_loops) {
+    for (int i=0; i<gpu_loops; i++) {
         C[idx] = .997 * A[idx] + .998 * B[idx]; // 3 Floating Point Operations
     }
-    // timers[idx] += clock() - start;
-    timers[idx]++;
+    timers[idx] += clock64() - start;
 }
 
 void print_usage(int argc, char* argv[]) {
-    printf("Usage: %s [# blocks] [# threads/block] [seconds]\n", argv[0]);
+    printf("Usage: %s [# blocks] [# threads/block] [seconds] [gpu_loops]\n", argv[0]);
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 4) {
+    if (argc != 5) {
         print_usage(argc, argv);
         return 0;
     }
@@ -33,6 +29,7 @@ int main(int argc, char* argv[]) {
     int blocks = std::stoi(argv[1]);
     int threads = std::stoi(argv[2]);
     int runtime = std::stoi(argv[3]); // In seconds
+    int gpu_loops = std::stoi(argv[4]); // In seconds
 
     if (blocks <= 0 || threads <= 0) {
         print_usage(argc, argv);
@@ -47,7 +44,7 @@ int main(int argc, char* argv[]) {
         hA[i] = float(std::rand())/float((RAND_MAX));
         hB[i] = float(std::rand())/float((RAND_MAX));
     }
-    unsigned long long int* hTimers = new unsigned long long int[threads*blocks];
+    long long int* hTimers = new long long int[threads*blocks];
 
     // Allocate memory on GPU and copy data
     float *dA, *dB, *dC;
@@ -56,9 +53,9 @@ int main(int argc, char* argv[]) {
     cudaMalloc(&dC, sizeof(float) * threads * blocks);
     cudaMemcpy(dA, hA, sizeof(float) * threads * blocks, cudaMemcpyHostToDevice);
     cudaMemcpy(dB, hB, sizeof(float) * threads * blocks, cudaMemcpyHostToDevice);
-    unsigned long long int* dTimers;
-    cudaMalloc(&dTimers, sizeof(unsigned long long int) * threads * blocks);
-    cudaMemcpy(dTimers, hTimers, sizeof(unsigned long long int) * threads * blocks, cudaMemcpyHostToDevice);
+    long long int* dTimers;
+    cudaMalloc(&dTimers, sizeof(long long int) * threads * blocks);
+    cudaMemcpy(dTimers, hTimers, sizeof(long long int) * threads * blocks, cudaMemcpyHostToDevice);
 
     // Initialize timing variables and start timer
     float time_ms;
@@ -72,7 +69,7 @@ int main(int argc, char* argv[]) {
     printf("Using %i blocks with %i threads/block for %i seconds.\n", blocks, threads, runtime);
     std::chrono::system_clock::time_point end = std::chrono::system_clock::now() + std::chrono::seconds(runtime);
     while (std::chrono::system_clock::now() < end) {
-        testKernel<<<blocks, threads>>>(dA, dB, dC, dTimers);
+        testKernel<<<blocks, threads>>>(dA, dB, dC, gpu_loops, dTimers);
         cudaDeviceSynchronize();
         i++;
     }
@@ -83,10 +80,13 @@ int main(int argc, char* argv[]) {
     cudaEventElapsedTime(&time_ms, gpu_start, gpu_stop);
     printf("Actual time: %fms over %i iterations\n", time_ms, i);
 
-    cudaMemcpy(hC, dC, sizeof(float) * threads * blocks, cudaMemcpyDeviceToHost);
-    cudaMemcpy(hTimers, dTimers, sizeof(unsigned long long int) * threads * blocks, cudaMemcpyDeviceToHost);
+    unsigned long long int flops = (3ULL * gpu_loops * i * blocks * threads) / (time_ms/1000ULL);
+    printf("FLOPS: %llu\n", flops);
 
-    for(int i=0; i < 1; i++) printf("%llu\n", hTimers[i]);
+    cudaMemcpy(hC, dC, sizeof(float) * threads * blocks, cudaMemcpyDeviceToHost);
+    cudaMemcpy(hTimers, dTimers, sizeof(long long int) * threads * blocks, cudaMemcpyDeviceToHost);
+
+    // for(int i=0; i < 1; i++) printf("%llu\n", hTimers[i]);
 
     cudaFree(dA);
     cudaFree(dB);
